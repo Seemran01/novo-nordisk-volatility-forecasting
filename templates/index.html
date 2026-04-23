@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Novo Nordisk Volatility</title>
+</head>
+<body>
+    <h1>Predicted Volatility</h1>
+    {% if prediction %}
+        <p>The latest predicted volatility is: {{ prediction }}</p>
+    {% else %}
+        <p>Could not compute prediction.</p>
+    {% endif %}
+
+    <p>RF MAE: {{ mae_rf }}</p>
+    <p>GARCH MAE: {{ mae_garch }}</p>
+
+    <h3>Diebold-Mariano Test</h3>
+    <p>DM Statistic: {{ dm_stat }}</p>
+    <p>p-value: {{ p_value }}</p>
+
+    {% if p_value < 0.05 %}
+        <p style="color:green;">Significant difference ✅</p>
+    {% else %}
+        <p style="color:red;">No significant difference ❌</p>
+    {% endif %}
+
+
+</body>
+</html>

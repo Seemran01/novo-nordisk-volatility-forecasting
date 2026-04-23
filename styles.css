@@ -1,0 +1,44 @@
+/* --- App background and text --- */
+body {
+    background-color: #f8f9fa;
+    color: #212529;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* --- Sidebar --- */
+[data-testid="stSidebar"] {
+    background-color: #2C3E50;
+    color: #FFFFFF;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+/* Sidebar headers */
+[data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    color: #FFD93D;
+}
+
+/* Sidebar buttons */
+[data-testid="stSidebar"] button {
+    background-color: #21B0C6;
+    color: white;
+    border-radius: 5px;
+}
+
+/* Markdown links in sidebar */
+[data-testid="stSidebar"] a {
+    color: #FF6B6B;
+}
+
+/* Main title */
+h1, h2, h3 {
+    color: #1f77b4;
+}
+
+/* Card style for metrics / results */
+.stMarkdown > div {
+    background-color: #FFFFFF;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+}
