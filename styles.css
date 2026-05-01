@@ -1,44 +1,122 @@
-/* --- App background and text --- */
-body {
-    background-color: #f8f9fa;
-    color: #212529;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+/* =========================
+   MAIN APP BACKGROUND (SOFT DARK)
+========================= */
+.stApp {
+    background-color: #0f172a;  /* soft navy (not pure black) */
+    color: #e5e7eb;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* --- Sidebar --- */
-[data-testid="stSidebar"] {
-    background-color: #2C3E50;
-    color: #FFFFFF;
-    padding: 20px;
-    border-radius: 10px;
+/* =========================
+   MAIN CONTAINER
+========================= */
+.block-container {
+    padding-top: 2rem;
+    padding-left: 2rem;
+    padding-right: 2rem;
 }
 
-/* Sidebar headers */
-[data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
-    color: #FFD93D;
+
+/* =========================
+   SIDEBAR (CLEAN & MODERN)
+========================= */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1f2a38, #2c3e50);
+}
+
+/* Sidebar text */
+section[data-testid="stSidebar"] * {
+    color: #eaf2f8 !important;
+}
+
+/* Sidebar headings */
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+    color: #ffd166 !important;
+    font-weight: 600;
 }
 
 /* Sidebar buttons */
-[data-testid="stSidebar"] button {
-    background-color: #21B0C6;
-    color: white;
-    border-radius: 5px;
+section[data-testid="stSidebar"] button {
+    background-color: #21b0c6 !important;
+    color: white !important;
+    border-radius: 8px !important;
+    border: none !important;
 }
 
-/* Markdown links in sidebar */
-[data-testid="stSidebar"] a {
-    color: #FF6B6B;
+/* Sidebar button hover */
+section[data-testid="stSidebar"] button:hover {
+    background-color: #1b8ea1 !important;
+    transform: scale(1.02);
 }
 
-/* Main title */
-h1, h2, h3 {
-    color: #1f77b4;
+/* =========================
+   HEADINGS
+========================= */
+h1 {
+    color: #93c5fd !important;
+    font-weight: 700;
 }
 
-/* Card style for metrics / results */
-.stMarkdown > div {
-    background-color: #FFFFFF;
+h2, h3 {
+    color: #cbd5e1 !important;
+}
+
+/* =========================
+   METRICS (DARK CARDS)
+========================= */
+div[data-testid="stMetric"] {
+    background-color: #1e293b;
+    border-radius: 12px;
     padding: 15px;
-    border-radius: 10px;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+
+/* Metric text */
+div[data-testid="stMetric"] * {
+    color: #e5e7eb !important;
+}
+
+/* =========================
+   EXPANDERS
+========================= */
+.streamlit-expanderHeader {
+    color: #93c5fd !important;
+    font-weight: 600;
+}
+
+
+/* =========================
+   PLOTLY CHART CLEAN STYLE
+========================= */
+
+/* Main chart container */
+[data-testid="stPlotlyChart"] {
+    background: transparent !important;
+}
+
+/* Remove ugly borders */
+.js-plotly-plot,
+.plot-container {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Make chart fill space cleanly */
+.js-plotly-plot {
+    margin: 0 !important;
+}
+
+/* Improve readability of text */
+g.xtick text,
+g.ytick text {
+    font-family: "Segoe UI", sans-serif !important;
+    font-size: 12px !important;
+}
+
+/* Optional: cleaner hover labels */
+.hoverlayer .hovertext {
+    font-family: "Segoe UI", sans-serif !important;
 }

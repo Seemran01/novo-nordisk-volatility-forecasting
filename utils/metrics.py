@@ -1,18 +1,37 @@
-from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import r2_score
 import numpy as np
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-def calculate_metrics(actual,pred):
+def calculate_metrics(actual, pred):
 
-    mae=mean_absolute_error(actual,pred)
-    rmse=np.sqrt(mean_squared_error(actual,pred))
-    mape = (abs((actual - pred)/actual).mean()) * 100
-    r2=r2_score(actual,pred)
+    actual = np.array(actual, dtype=float)
+    pred = np.array(pred, dtype=float)
+
+    print("DEBUG actual min/max:", np.min(actual), np.max(actual))
+    print("DEBUG pred min/max:", np.min(pred), np.max(pred))
+
+    # =========================
+    # REMOVE INVALID VALUES ONCE
+    # =========================
+    epsilon = 1e-8
+
+    actual = np.clip(actual, epsilon, None)
+    pred = np.clip(pred, epsilon, None)
+
+    # =========================
+    # CORE METRICS
+    # =========================
+    mae = mean_absolute_error(actual, pred)
+    rmse = np.sqrt(mean_squared_error(actual, pred))
+
+    # =========================
+    # QLIKE (standard volatility loss)
+    # =========================
+    qlike = np.mean(
+        (actual / pred) - np.log(actual / pred) - 1
+    )
 
     return {
-        "MAE":mae,
-        "RMSE":rmse,
-        "R2":r2,
-        "MAPE": mape
+        "MAE": mae,
+        "RMSE": rmse,
+        "QLIKE": qlike
     }

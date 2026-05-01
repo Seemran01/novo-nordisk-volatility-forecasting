@@ -1,64 +1,146 @@
-# models/econometric.py
 from arch import arch_model
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 
-def run_garch(df, test_size=0.2):
-    returns = df['Log_Returns'].dropna()
 
-    model = arch_model(returns, vol='Garch', p=1, q=1, dist='Normal')
-    res = model.fit(disp='off')
+# =========================
+# GARCH WALK-FORWARD
+# =========================
+def walk_forward_garch(df, initial_window, step_size, forecast_horizon=22):
 
-    dates = returns.index
+    returns = df["Log_Returns"].dropna()
 
-    vol = pd.Series(res.conditional_volatility, index=dates)
+    preds, actuals, dates = [], [], []
 
-    split = int(len(vol) * (1 - test_size))
+    for i in range(initial_window, len(returns) - forecast_horizon, step_size):
 
-    vol_test = vol.iloc[split:]
-    test_dates = vol_test.index
+        train = returns.iloc[:i]
+        test = returns.iloc[i:i+forecast_horizon]
 
-    return vol_test.values, test_dates
+        model = arch_model(train, vol='Garch', p=1, q=1, dist='Normal')
+        res = model.fit(disp='off')
+
+        forecast = res.forecast(horizon=forecast_horizon)
+
+        pred = forecast.variance.values[-1, :]   
+        actual = test.values ** 2                
+
+        preds.extend(pred[:len(test)])
+        actuals.extend(actual)
+        dates.extend(test.index)
+
+    return np.array(preds), np.array(actuals), dates
 
 
-# In run_har, return the index too:
-def run_har(df, test_size=0.2):
-    har_features = ['RV_1D', 'RV_5D', 'RV_22D']
+# =========================
+# HAR WALK-FORWARD
+# =========================
+def walk_forward_har(df, initial_window, step_size, forecast_horizon=22):
 
-    X = df[har_features].values
-    y = df['Realized_Vol'].values
-    dates = df.index  # ✅ capture dates
+    X = df[['RV_1D', 'RV_5D', 'RV_22D']]
+    y = df['Realized_Vol']  
 
-    valid_idx = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
-    X, y = X[valid_idx], y[valid_idx]
-    dates = dates[valid_idx]  # ✅ filter dates too
+    preds, actuals, dates = [], [], []
 
-    if len(X) < 30:
-        return np.array([]), np.array([]), pd.DatetimeIndex([])
+    for i in range(initial_window, len(df) - forecast_horizon, step_size):
 
-    split = int(len(X) * (1 - test_size))
-    X_train, X_test = X[:split], X[split:]
-    y_train, y_test = y[:split], y[split:]
-    test_dates = dates[split:]  # ✅ test period dates
+        X_train = X.iloc[:i]
+        y_train = y.iloc[:i]
 
-    model = LinearRegression()
-    model.fit(X_train, y_train)
+        X_test = X.iloc[i:i+forecast_horizon]
+        y_test = y.iloc[i:i+forecast_horizon]
 
-    return model.predict(X_test), y_test, test_dates  # ✅ return dates
+        model = LinearRegression()
+        model.fit(X_train, y_train)
 
-def naive_persistence(rv_series):
-    return rv_series.shift(1)
+        pred = model.predict(X_test)
 
-def ewma_volatility(returns, lam=0.94):
-    ewma_var = []
+        preds.extend(pred)
+        actuals.extend(y_test.values)
+        dates.extend(y_test.index)
+
+    return np.array(preds), np.array(actuals), dates
+
+
+# =========================
+# NAIVE WALK-FORWARD
+# =========================
+def walk_forward_naive(series, initial_window, step_size, forecast_horizon=22):
+
+    preds, actuals, dates = [], [], []
+
+    for i in range(initial_window, len(series) - forecast_horizon, step_size):
+
+        train = series.iloc[:i]
+        test = series.iloc[i:i+forecast_horizon]
+
+        pred = train.iloc[-1]
+
+        preds.extend([pred] * len(test))
+        actuals.extend(test.values)
+        dates.extend(test.index)
+
+    return np.array(preds), np.array(actuals), dates
+
+
+# =========================
+# EWMA WALK-FORWARD
+# =========================
+def walk_forward_ewma(returns, initial_window, step_size, forecast_horizon=22, lam=0.94):
+
+    preds, actuals, dates = [], [], []
+
+    for i in range(initial_window, len(returns) - forecast_horizon, step_size):
+
+        train = returns.iloc[:i]
+        test = returns.iloc[i:i+forecast_horizon]
+
+        var = train.var()
+
+        for r in train:
+            var = lam * var + (1 - lam) * (r ** 2)
+
+        pred = np.array([var] * len(test))
+
+        preds.extend(pred)
+        actuals.extend(test.values ** 2)   
+        dates.extend(test.index)
+
+    return np.array(preds), np.array(actuals), dates
+
+
+
+def forecast_garch_next(df):
+
+    returns = df["Log_Returns"].dropna()
+
+    model = arch_model(returns, vol="Garch", p=1, q=1, dist="Normal")
+    res = model.fit(disp="off")
+
+    forecast = res.forecast(horizon=1)
+
+    return forecast.variance.values[-1, 0]
+
+
+def forecast_har_next(model, df):
+
+    X = df[['RV_1D', 'RV_5D', 'RV_22D']].iloc[-1].values.reshape(1, -1)
+
+    return model.predict(X)[0]
+
+
+def forecast_ewma_next(returns, lam=0.94):
+
     var = returns.var()
 
     for r in returns:
         var = lam * var + (1 - lam) * (r ** 2)
-        ewma_var.append(var)
 
-    ewma_series = pd.Series(ewma_var, index=returns.index)
+    return float(var)    
 
-    # ✅ return EXACTLY 3 values
-    return ewma_series.values, returns.values, returns.index
+
+
+def forecast_naive_next(df):
+
+    return df["Realized_Vol"].iloc[-1]

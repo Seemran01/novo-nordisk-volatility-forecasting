@@ -1,28 +1,54 @@
 import numpy as np
 import pandas as pd
 
-def walk_forward_validation(X, y, model_func, window_size=100, step_size=10):
+def walk_forward_validation(
+    X,
+    y,
+    model_fn,
+    initial_window=756,
+    step_size=5,
+    forecast_horizon=22
+):
 
-    predictions, actuals, dates = [], [], []
+    preds = []
+    actuals = []
+    dates = []
 
-    for i in range(window_size, len(X), step_size):
+    start = initial_window
+    n = len(X)
 
-        X_train = X.iloc[i-window_size:i]
-        y_train = y.iloc[i-window_size:i]
+    for i in range(start, n - forecast_horizon, step_size):
 
-        X_test = X.iloc[i:i+1]
-        y_test = y.iloc[i:i+1]
+        # ------------------------
+        # EXPANDING TRAIN SET
+        # ------------------------
+        X_train = X.iloc[:i]
+        y_train = y.iloc[:i]
 
-        if len(X_test) == 0:
-            break
+        X_test = X.iloc[i:i + forecast_horizon]
+        y_test = y.iloc[i:i + forecast_horizon]
 
-        model = model_func()
+        # ------------------------
+        # TRAIN MODEL
+        # ------------------------
+        model = model_fn()
         model.fit(X_train, y_train)
 
-        pred = model.predict(X_test)[0]
+        # ------------------------
+        # PREDICT
+        # ------------------------
+        y_pred = model.predict(X_test)
 
-        predictions.append(pred)
-        actuals.append(y_test.iloc[0])
-        dates.append(X.index[i])
+        preds.extend(y_pred)
+        actuals.extend(y_test.values)
+        dates.extend(y_test.index)
 
-    return np.array(predictions), np.array(actuals), pd.DatetimeIndex(dates)
+    return np.array(preds), np.array(actuals), dates
+
+
+
+def forecast_ml_next_day(model, df, feature_cols):
+
+    last_row = df[feature_cols].iloc[-1].values.reshape(1, -1)
+
+    return model.predict(last_row)[0]

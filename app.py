@@ -1,70 +1,116 @@
-# --- APP SETUP ---
+# =========================
+# APP SETUP
+# =========================
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy import stats
 import plotly.express as px
+import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LinearRegression
 
+from pathlib import Path
 from data.data_loader import load_data
+from data.data_pipeline import prepare_data
 from features.feature_engineering import create_features
 from models.validation import walk_forward_validation
-from utils.dm_test import dm_test
 from models.ml_models import rf_model, svr_model, xgb_model
-from models.econometric import run_garch, run_har, naive_persistence, ewma_volatility
+from models.model_pipeline import run_all_models
 from utils.metrics import calculate_metrics
+from utils.dm_test import dm_test
+from models.econometric import forecast_garch_next, forecast_har_next, forecast_naive_next, forecast_ewma_next
+from models.validation import forecast_ml_next_day
 
-# --- PAGE CONFIG ---
+
+
+def load_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+load_css("styles.css")
+
+# =========================
+# PAGE CONFIG
+# =========================
 st.set_page_config(
     page_title="NVO Volatility Predictor",
     page_icon="📈",
     layout="wide"
 )
 
-# --- LOAD CSS ---
-try:
-    with open("styles/style.css") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except FileNotFoundError:
-    st.warning("style.css not found. Default styling will be used.")
 
+# =========================
+# SESSION STATE
+# =========================
 
-# Initialising session
 if "selected_models" not in st.session_state:
-    st.session_state.selected_models = ["Random Forest", "HAR-RV"]
+    st.session_state.selected_models = ["Random Forest", "EWMA Volatility", "GARCH(1,1)"]
 
-if "results" not in st.session_state:
-    st.session_state.results = {}
+if "window_size" not in st.session_state:
+    st.session_state.window_size = 756
 
-if "actuals" not in st.session_state:
-    st.session_state.actuals = None
+if "step_size" not in st.session_state:
+    st.session_state.step_size = 5
 
+if "selected_models" not in st.session_state:
+    st.session_state.selected_models = [
+        "Random Forest",
+        "EWMA Volatility",
+        "GARCH(1,1)"
+    ]
+
+
+# =========================
+# SIDEBAR
+# =========================
 # --- SIDEBAR CONFIGURATION ---
 st.sidebar.header("⚡ NVO Volatility Predictor Settings")
 
-# --- SESSION STATE DEFAULTS ---
-if "selected_models" not in st.session_state:
-    st.session_state.selected_models = ["Random Forest", "XGBoost", "GARCH(1,1)"]
-
 # --- CALLBACK FUNCTIONS ---
 def set_ml_only():
-    st.session_state.selected_models = ["Random Forest", "SVR", "XGBoost"]
+    st.session_state.update({
+        "selected_models": [
+            "Random Forest", 
+            "SVR", 
+            "XGBoost"
+        ]
+    })
 
 def set_econometrics_only():
-    st.session_state.selected_models = ["GARCH(1,1)", "HAR-RV"]
+    st.session_state.update({
+        "selected_models": [
+            "GARCH(1,1)", 
+            "HAR-RV"
+        ]
+    })
 
 def set_baselines_only():
-    st.session_state.selected_models = ["Naive Persistence", "EWMA Volatility"]
+    st.session_state.update({
+        "selected_models": [
+            "Naive Persistence",
+            "EWMA Volatility"
+        ]
+    })
 
 
 # --- MODEL SELECTION ---
-with st.sidebar.expander("📊 Model Selection", expanded=True):
-    st.markdown("**Select which models to include:**")
-    
-    selected_models = st.multiselect(
-        "Choose Models",
-        options=["Random Forest", "SVR", "XGBoost", "GARCH(1,1)", "HAR-RV", "Naive Persistence", "EWMA Volatility"],
-        key="selected_models",
-        help="Machine Learning models (RF, SVR, XGBoost), Econometric benchmarks (GARCH, HAR-RV), and Baselines (Naive, EWMA)"
+with st.sidebar.expander("🤖 Model Selection", expanded=True):
+
+    all_models = [
+        "Random Forest",
+        "SVR",
+        "XGBoost",
+        "GARCH(1,1)",
+        "EWMA Volatility",
+        "Naive Persistence",
+        "HAR-RV"
+    ]
+
+    st.session_state.selected_models = st.multiselect(
+        "Select models",
+        options=all_models,
+        default=st.session_state.selected_models
     )
     
     col1, col2, col3 = st.columns(3)
@@ -74,328 +120,325 @@ with st.sidebar.expander("📊 Model Selection", expanded=True):
 
 # --- TIME PERIOD SELECTION ---
 with st.sidebar.expander("📅 Data Period", expanded=False):
-    st.markdown("**Select historical data range:**")
+
     time_periods = {
-        "1 Month": "1mo",
-        "3 Months": "3mo",
-        "6 Months": "6mo",
         "1 Year": "1y",
         "2 Years": "2y",
+        "3 Years": "3y",
         "5 Years": "5y",
         "10 Years": "10y"
     }
+
     selected_period = st.selectbox(
         "Time Period",
         options=list(time_periods.keys()),
         index=3,
-        help="Select length of historical data for features"
+        key="selected_period"
     )
-    col1, col2 = st.columns(2)
-    if col1.button("1 Month Shortcut"):
-        selected_period = "1 Month"
-    if col2.button("1 Year Shortcut"):
-        selected_period = "1 Year"
 
-# --- POPUP WARNING FOR SHORT PERIODS ---
-    short_periods = ["1 Month", "3 Months", "6 Months"]
-    if selected_period in short_periods:
-        st.warning(
-            f"⚠️ Warning: {selected_period} is a short period. "
-            "Predictions may be unreliable. Use 1 year or more for better results."
-        )
 
-# --- WALK-FORWARD VALIDATION ---
+# =========================
+# AUTO TRAINING WINDOW RULE
+# =========================
+
+train_map = {
+    "1 Year": 0.5,   # optional (6 months)
+    "2 Years": 1,
+    "3 Years": 2,
+    "5 Years": 3,
+    "10 Years": 3
+}
+
+train_years = train_map[selected_period]
+
+# converts years -> trading days
+window_size = int(train_years * 252)
+
+# keeps only step size user controlled
 with st.sidebar.expander("🔬 Walk-Forward Validation", expanded=False):
-    st.markdown("**Set window and step size:**")
-    window_size = st.slider("Window Size", min_value=50, max_value=200, value=100, step=10,
-                            help="Past days used for training in each step")
-    step_size = st.slider("Step Size", min_value=5, max_value=50, value=10, step=5,
-                          help="Days to move forward after each iteration")
+
+    step_size = st.slider(
+        "Step Size",
+        min_value=1,
+        max_value=22,
+        value=5,
+        step=1
+    )
+
+st.sidebar.write(
+    f"Auto training window: {train_years} years ({window_size} days)"
+)
+
+
+def reset_app():
+    st.session_state.selected_models = [
+        "Random Forest",
+        "EWMA Volatility",
+        "GARCH(1,1)"
+    ]
+    st.session_state.window_size = 756
+    st.session_state.step_size = 5
+    st.rerun()
+    
+
 
 # --- QUICK ACTIONS ---
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Quick Actions:**")
+
 col1, col2, col3 = st.sidebar.columns(3)
-if col1.button("🔄 Reset"):
-    st.session_state.selected_models = ["Random Forest", "XGBoost", "GARCH(1,1)"]
-    selected_period = "1 Year"
-    window_size = 100
-    step_size = 10
+
+col1.button("🔄 Reset", on_click=reset_app)
+
 
 # --- MINI SUMMARY ---
+models = st.session_state.get("selected_models", [])
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔹 Current Configuration")
-st.sidebar.markdown(f"**Models:** {', '.join(st.session_state.selected_models)}")
+
+if models:
+    st.sidebar.markdown(f"**Models:** {', '.join(models)}")
+else:
+    st.sidebar.warning("No models selected")
+
 st.sidebar.markdown(f"**Period:** {selected_period}")
-st.sidebar.markdown(f"**Walk-Forward:** Window={window_size}, Step={step_size}")
+st.sidebar.markdown(f"**Window:** {window_size}")
+st.sidebar.markdown(f"**Step:** {step_size}")
+
+
+
+# =========================
+# TITLE
+# =========================
 
 # --- MAIN APP TITLE ---
 st.title("📈 Novo Nordisk (NVO) Volatility Predictor")
 
 st.markdown("""
 This dashboard presents **short-horizon volatility forecasts for Novo Nordisk stock**
-using **machine learning models** (Random Forest, SVR, XGBoost).
+using both **machine learning models** (Random Forest, SVR, XGBoost) and
+traditional **econometric models** (HAR, GARCH, EWMA, Naive Persistence).
 
-Model performance is **benchmarked against traditional econometric models**
-(HAR and GARCH) to evaluate predictive accuracy in a realistic setting.
-
-Evaluation is conducted using **walk-forward validation**, simulating real-time forecasting.
+The objective is to evaluate and compare predictive performance across model classes
+under a realistic financial forecasting setting.
 """)
 
 with st.expander("See methodology"):
     st.markdown("""
     **Methodology Summary**
 
-• Data: Novo Nordisk historical stock prices  
-• Target variable: Realized volatility (rolling squared log returns)  
-• Validation: Walk-forward validation to simulate real-time forecasting and avoid look-ahead bias. 
-• Models:
-  - Random Forest
-  - Support Vector Regression
-  - XGBoost
-  - HAR
-  - GARCH(1,1)
+• **Data**: Novo Nordisk historical daily stock prices  
+• **Target variable**: Realized volatility (rolling variance of log returns)  
+• **Forecasting approach**: Walk-forward validation to simulate real-time prediction and avoid look-ahead bias  
 
-The objective is to compare machine learning methods with traditional
-econometric benchmarks for short-horizon volatility forecasting.
+• **Models**:
+  - Random Forest Regression  
+  - Support Vector Regression (SVR)  
+  - XGBoost Regression  
+  - HAR-RV model  
+  - GARCH(1,1)  
+  - EWMA volatility model  
+  - Naive persistence benchmark  
 
-• Metrics:
-  - MAE
-  - RMSE
-  - MAPE
-  - R2             
+• **Evaluation metrics**:
+  - Mean Absolute Error (MAE)  
+  - Root Mean Squared Error (RMSE)  
+  - QLIKE (volatility-specific loss function)
+
+The framework enables a direct comparison between machine learning approaches
+and classical econometric volatility models under identical forecasting conditions.
 """)
 
-
-# --- LOAD DATA ---
+# =========================
+# LOAD DATA
+# =========================
 df = load_data(period=time_periods[selected_period])
-if df is None or len(df) < 5:
-    st.warning(f"⚠️ Not enough data for {selected_period}. Please choose a longer period.")
-    st.stop()
-
-# --- FEATURE ENGINEERING ---
 df = create_features(df)
 
-# --- WARNING FOR SHORT PERIODS ---
-short_periods = ["1 Month", "3 Months", "6 Months"]
-if df.empty:
-    if selected_period in short_periods:
-        st.warning(
-            f"⚠️ After feature engineering, no usable data for {selected_period}. "
-            "Select 1 year or more for meaningful results."
-        )
-    else:
-        st.warning("⚠️ No data available after feature engineering. Please select a longer period.")
-    st.stop()
+X, y = prepare_data(df)
 
-# --- SELECT FEATURES AND TARGET ---
-feature_cols = [
-    'Open', 'High', 'Low', 'Close', 'Volume',
-    'MA_5', 'MA_20', 'Volatility_10', 'Volume_Change'
-]
+feature_cols = X.columns
 
-X = df[feature_cols]
-y = df['Realized_Vol']
+rf = rf_model().fit(X, y)
+svr = svr_model().fit(X, y)
+xgb = xgb_model().fit(X, y)
 
-if len(X) == 0 or len(y) == 0:
-    st.warning("⚠️ Feature or target arrays are empty. Cannot proceed.")
-    st.stop()
+har_X = df[['RV_1D', 'RV_5D', 'RV_22D']]
+har_y = df['Realized_Vol']
 
-# --- READY FOR MODELS ---
-model_results = {}
+har_model = LinearRegression()
+har_model.fit(har_X, har_y)
 
-# --- ML MODELS ---
-st.write("X length:", len(X))
-st.write("window_size:", window_size)
-st.write("step_size:", step_size)
+st.write("X shape:", X.shape)
 
-if "Random Forest" in st.session_state.selected_models:
-    X = X.ffill().bfill()
-    rf_pred, rf_actual, rf_dates = walk_forward_validation(X, y, rf_model, window_size, step_size)
-    if len(rf_pred) == 0 or len(rf_actual) == 0:
-        st.warning("⚠️ Random Forest could not generate predictions. Data may be too short.")
-    else:
-        rf_metrics = calculate_metrics(rf_actual, rf_pred)
-        model_results["Random Forest"] = {"pred": rf_pred, "actual": rf_actual, "dates": rf_dates, **rf_metrics}
+# =========================
+# RUN ALL MODELS
+# =========================
 
-if "SVR" in st.session_state.selected_models:
-    svr_pred, svr_actual, svr_dates = walk_forward_validation(X, y, svr_model, window_size, step_size)
-    if len(svr_pred) == 0 or len(svr_actual) == 0:
-        st.warning("⚠️ SVR could not generate predictions. Data may be too short.")
-    else:
-        svr_metrics = calculate_metrics(svr_actual, svr_pred)
-        model_results["SVR"] = {"pred": svr_pred, "actual": svr_actual, "dates": svr_dates, **svr_metrics}
+st.write("DEBUG selected_models:", st.session_state.selected_models)
 
-if "XGBoost" in st.session_state.selected_models:
-    xgb_pred, xgb_actual, xgb_dates = walk_forward_validation(X, y, xgb_model, window_size, step_size)
-    if len(xgb_pred) == 0 or len(xgb_actual) == 0:
-        st.warning("⚠️ XGBoost could not generate predictions. Data may be too short.")
-    else:
-        xgb_metrics = calculate_metrics(xgb_actual, xgb_pred)
-        model_results["XGBoost"] = {"pred": xgb_pred, "actual": xgb_actual, "dates": xgb_dates, **xgb_metrics}
+model_results = run_all_models(
+    df,
+    st.session_state.selected_models,
+    window_size,
+    step_size
+)
 
-# --- ECONOMETRIC MODELS ---
-if "GARCH(1,1)" in st.session_state.selected_models:
-    garch_pred, garch_dates = run_garch(df)
-    if len(garch_pred) == 0:
-        st.warning("⚠️ GARCH could not generate predictions. Data may be too short.")
-    else:
-        garch_metrics = calculate_metrics(y[-len(garch_pred):], garch_pred)
-        model_results["GARCH(1,1)"] = {"pred": garch_pred, "actual": y[-len(garch_pred):], "dates": garch_dates, **garch_metrics}
+st.write("DEBUG model_results keys:", list(model_results.keys()))
 
-if "HAR-RV" in st.session_state.selected_models:
-    # In app.py, right before run_har(df):
-    st.write("RV_1D sample:", df['RV_1D'].dropna().tail(10).values)
-    st.write("Realized_Vol sample:", df['Realized_Vol'].dropna().tail(10).values)
-    st.write("df shape:", df.shape)
+for m, res in model_results.items():
+    st.write(m)
+    st.write("pred:", len(res["pred"]))
+    st.write("actual:", len(res["actual"]))
+    st.write("dates:", len(res["dates"]))
+    st.write("---")
 
-    har_pred, har_actual, har_dates = run_har(df, test_size=0.2)   
-
-    if len(har_pred) == 0:
-        st.warning("⚠️ HAR-RV could not generate predictions. Data may be too short.")
-    else:
-        har_metrics = calculate_metrics(har_actual, har_pred)
-
-        model_results["HAR-RV"] = {
-            "pred": har_pred,
-            "actual": har_actual,
-            "dates": har_dates,
-            **har_metrics
-        }
-# --- BaseLines Only
-if "Naive Persistence" in st.session_state.selected_models:
-    naive_pred = naive_persistence(df['Realized_Vol'])
-    
-    naive_metrics = calculate_metrics(y[1:], naive_pred.dropna().values)
-
-    model_results["Naive Persistence"] = {
-        "pred": naive_pred.dropna().values,
-        "actual": y[1:],
-        "dates": df.index[1:],
-        **naive_metrics
-    }
-
-if "EWMA Volatility" in st.session_state.selected_models:
-    ewma_pred, ewma_actual, ewma_dates = ewma_volatility(df['Log_Returns'])
-
-    ewma_metrics = calculate_metrics(ewma_actual, ewma_pred)
-
-    model_results["EWMA"] = {
-        "pred": ewma_pred,
-        "actual": ewma_actual,
-        "dates": ewma_dates,
-        **ewma_metrics
-    }
-
-# --- STOP IF NO MODELS PRODUCED RESULTS ---
 if len(model_results) == 0:
-    st.warning("⚠️ No models could generate predictions. Increase data period or reduce walk-forward window size.")
+    st.warning("No models selected or no results generated.")
     st.stop()
 
-st.session_state.actuals = list(model_results.values())[0]["actual"]
 
-first_model = next(iter(model_results.values()))
+# =========================
+# STRONG ALIGNMENT (FIX)
+# =========================
 
+valid_models = model_results
+
+all_dates = []
+
+for res in model_results.values():
+    if "dates" in res and len(res["dates"]) > 0:
+        all_dates.append(res["dates"])
+
+common_start = max(d[0] for d in all_dates)
+common_end = min(d[-1] for d in all_dates)
+
+st.write("VALID MODELS:", list(valid_models.keys()))
+
+if len(all_dates) == 0:
+    st.error("No valid dates found")
+    st.stop()
+
+first_key = list(valid_models.keys())[0]
+
+common_index = set(valid_models[first_key]["dates"])
+
+for res in valid_models.values():
+    common_index = common_index.intersection(set(res["dates"]))
+
+common_index = sorted(list(common_index))
+
+
+# =========================
+# STORE FOR DM TEST
+# =========================
 st.session_state.results = {
     m: res["pred"] for m, res in model_results.items()
 }
 
-st.session_state.actuals = first_model["actual"]
+st.session_state.actuals = list(model_results.values())[0]["actual"]
 
-# --- ENHANCED MODEL METRICS DISPLAY ---
-import plotly.graph_objects as go
 
-st.subheader("📊 Model Metrics Dashboard")
+# =========================
+# METRICS DISPLAY
+# =========================
 
-# Colors for metrics
-metric_colors = {
-    "MAE": "#FF6B6B",      # Red
-    "RMSE": "#4ECDC4",     # Teal
-    "R²": "#FFD93D",       # Yellow
-    "MAPE": "#21B0C6"      # Dark teal
-}
+metrics_df = pd.DataFrame({
+    m: {
+        "MAE": res["MAE"],
+        "RMSE": res["RMSE"],
+        "QLIKE": res["QLIKE"]
+    }
+    for m, res in model_results.items()
+}).T
 
-# Create side-by-side columns for each model
-model_cols = st.columns(len(model_results))
 
-for i, (model, res) in enumerate(model_results.items()):
-    with model_cols[i]:
-        # Card container
-        card_html = f"""
-        <div style="
-            background-color:#2C3E50;
-            padding:20px;
-            border-radius:15px;
-            border:1px solid #ddd;
-            text-align:center;
-            box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-        ">
-            <h3 style="color:#1f77b4;margin-bottom:15px;">{model}</h3>
-            <p style="font-size:16px;"><strong style='color:{metric_colors['MAE']}'>MAE:</strong> {res['MAE']:.6f}</p>
-            <p style="font-size:16px;"><strong style='color:{metric_colors['RMSE']}'>RMSE:</strong> {res['RMSE']:.6f}</p>
-            <p style="font-size:16px;"><strong style='color:{metric_colors['R²']}'>R²:</strong> {res['R2']:.4f}</p>
-            <p style="font-size:16px;"><strong style='color:{metric_colors['MAPE']}'>MAPE:</strong> {res['MAPE']:.2f}%</p>
-        </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
-
-        # Mini bar chart for metrics comparison
-        fig = go.Figure(go.Bar(
-            x=["MAE", "RMSE", "R²", "MAPE"],
-            y=[res['MAE'], res['RMSE'], res['R2'], res['MAPE']],
-            marker_color=[metric_colors[m] for m in ["MAE","RMSE","R²","MAPE"]],
-            text=[f"{v:.4f}" if m != "MAPE" else f"{v:.2f}%" for m,v in zip(["MAE","RMSE","R²","MAPE"], [res['MAE'], res['RMSE'], res['R2'], res['MAPE']])],
-            textposition="auto"
-        ))
-        fig.update_layout(
-            height=250,
-            margin=dict(t=10, b=10, l=10, r=10),
-            yaxis=dict(title="Value"),
-            xaxis=dict(title="Metric")
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-# Build plot using dates per model
-fig = go.Figure()
-
-for model_name, res in model_results.items():
-    fig.add_trace(go.Scatter(
-        x=res['dates'],
-        y=res['pred'],
-        mode='lines',
-        name=model_name
-    ))
-    # Plot actual once (use HAR or any model's actual + dates)
-
-# Add actual from any model (they should share the same test period)
-first = next(iter(model_results.values()))
-fig.add_trace(go.Scatter(
-    x=first['dates'],
-    y=first['actual'],
-    mode='lines',
-    name='Actual',
-    line=dict(color='white', dash='dash')
-))
+# =========================
+# HEATMAP
+# =========================
+fig = px.imshow(
+    metrics_df,
+    text_auto=".4f",
+    aspect="auto",
+    color_continuous_scale="RdYlGn_r",
+    zmin=metrics_df.min().min(),
+    zmax=metrics_df.max().max(),
+)
 
 fig.update_layout(
-    title="Actual vs Predicted Volatility",
-    xaxis_title="Date",
-    yaxis_title="Volatility",
-    template="plotly_dark"
+    title="Model Performance Heatmap",
+    title_x=0.5,
+    plot_bgcolor="#0f172a",
+    paper_bgcolor="#0f172a",
+    font=dict(color="#e5e7eb"),
 )
+
+fig.update_traces(
+    textfont_size=12
+)
+
 st.plotly_chart(fig, use_container_width=True)
 
-#Realized Volatility
 
-st.subheader("📌 Current Realized Volatility")
+# =========================
+# FUTURE FORECAST 
+# =========================
 
-latest_rv = y.iloc[-1]
-st.metric(
-    label="Latest Realized Volatility",
-    value=f"{latest_rv:.6f}"
+future_results = {}
+
+selected = st.session_state.selected_models
+st.write("Selected models:", selected)
+
+if "GARCH(1,1)" in selected:
+    future_results["GARCH(1,1)"] = forecast_garch_next(df)
+
+if "HAR-RV" in selected:
+    future_results["HAR-RV"] = forecast_har_next(har_model, df)
+
+if "EWMA Volatility" in selected:
+    future_results["EWMA"] = forecast_ewma_next(df["Log_Returns"])
+
+if "Naive Persistence" in selected:
+    future_results["Naive"] = forecast_naive_next(df)
+
+if "Random Forest" in selected:
+    future_results["Random Forest"] = forecast_ml_next_day(rf, df, feature_cols)
+
+if "SVR" in selected:
+    future_results["SVR"] = forecast_ml_next_day(svr, df, feature_cols)
+
+if "XGBoost" in selected:
+    future_results["XGBoost"] = forecast_ml_next_day(xgb, df, feature_cols)
+
+
+# 🔍 DEBUG HERE (ADD THIS)
+st.write("DEBUG forecasts:")
+for k, v in future_results.items():
+    st.write(k, v)
+
+# =========================
+# DISPLAY
+# =========================
+
+st.subheader("🔮 Next-Day Volatility Forecast")
+
+st.dataframe(
+    pd.DataFrame.from_dict(future_results, orient="index", columns=["Forecast"])
+    .reset_index()
+    .rename(columns={"index": "Model"})
 )
 
-#Table
+# =========================
+# ACTUAL VOL
+# =========================
+st.subheader("📌 Latest Realized Volatility")
+st.metric("Latest RV", f"{y.iloc[-1]:.6f}")
+
+
+# =========================
+# TABLE 
+# =========================
 st.subheader("📌 Latest Volatility: Actual vs Model Predictions")
 
 if len(model_results) == 0:
@@ -404,119 +447,104 @@ if len(model_results) == 0:
 
 rows = []
 
-# get shared actuals
+# shared actuals
 actuals = next(iter(model_results.values()))["actual"]
 
-# handle both pandas Series and numpy arrays safely
-if isinstance(actuals, pd.Series):
-    last_actual = actuals.iloc[-1]
-else:
-    last_actual = actuals[-1]
+last_actual = actuals.iloc[-1] if isinstance(actuals, pd.Series) else actuals[-1]
 
 rows.append({
     "Model": "Actual Volatility",
-    "Value": last_actual
+    "Value": last_actual,
+    "Type": "Actual"
 })
 
 for model_name, res in model_results.items():
     rows.append({
         "Model": model_name,
-        "Value": res["pred"][-1]
+        "Value": res["pred"][-1],
+        "Type": "Prediction"
     })
 
 df = pd.DataFrame(rows)
-df["Value"] = df["Value"].apply(lambda x: f"{x:.6f}")
 
-st.dataframe(df)
+# =========================
+# STYLING 
+# =========================
+styled_df = (
+    df.style
+    .format({"Value": "{:.6f}"})
+    .apply(lambda x: ["background-color: #1e293b" if v == "Prediction" else "background-color: #0f172a"
+                      for v in df["Type"]], axis=0)
+    .set_properties(**{
+        "color": "#e5e7eb",
+        "text-align": "center"
+    })
+)
 
-#Feature Importance
+st.dataframe(styled_df, use_container_width=True)
+
+
 st.subheader("🧠 Feature Importance (ML Models)")
 
-feature_names = X.columns
+# --- Ensure flat columns (fix MultiIndex issue) ---
+if isinstance(X.columns, pd.MultiIndex):
+    X.columns = ['_'.join(map(str, col)) for col in X.columns]
+
+feature_cols = X.columns
 
 # RANDOM FOREST
-# CLEANING FEATURES
-if isinstance(X.columns, pd.MultiIndex):
-    X.columns = ['_'.join(col).strip() for col in X.columns]
-
-X = X.loc[:, ~X.columns.str.contains("index", case=False)]
 if "Random Forest" in st.session_state.selected_models:
     try:
-        model = rf_model()
-        model.fit(X, y)
-
         importance = pd.Series(
-            model.feature_importances_,
-            index=X.columns
+            rf.feature_importances_,
+            index=feature_cols
         ).sort_values(ascending=False)
 
         st.write("Random Forest Feature Importance")
         st.bar_chart(importance)
 
     except Exception as e:
-        st.warning(f"Feature importance unavailable for Random Forest: {e}")
+        st.warning(f"RF importance error: {e}")
 
 # XGBOOST
-# CLEANING FEATURES
-if isinstance(X.columns, pd.MultiIndex):
-    X.columns = ['_'.join(col).strip() for col in X.columns]
-
-X = X.loc[:, ~X.columns.str.contains("index", case=False)]
 if "XGBoost" in st.session_state.selected_models:
     try:
-        model = xgb_model()
-        model.fit(X, y)
-
         importance = pd.Series(
-            model.feature_importances_,
-            index=X.columns
+            xgb.feature_importances_,
+            index=feature_cols
         ).sort_values(ascending=False)
 
         st.write("XGBoost Feature Importance")
         st.bar_chart(importance)
 
     except Exception as e:
-        st.warning(f"Feature importance unavailable for XGBoost: {e}")
+        st.warning(f"XGBoost importance error: {e}")
 
-# SVR (no feature importance)
+# SVR
 if "SVR" in st.session_state.selected_models:
-    st.info("SVR does not provide built-in feature importance.") 
+    st.info("SVR does not provide built-in feature importance.")
 
-# ---------------------------
+
+# =========================
 # DM TEST
-# ---------------------------
-def dm_test(actuals, pred1, pred2):
-    d = (actuals - pred1)**2 - (actuals - pred2)**2
-    dm_stat = np.mean(d) / np.sqrt(np.var(d) / len(d))
-    p_value = 2 * (1 - stats.norm.cdf(abs(dm_stat)))
-    return dm_stat, p_value
-
-
+# =========================
 st.subheader("📉 Diebold–Mariano Test")
 
-# Check data exists
-if "results" not in st.session_state or "actuals" not in st.session_state:
-    st.warning("No results found. Run the models first.")
-    st.stop()
-
-actuals = st.session_state.actuals
+base_model = next(iter(model_results.values()))
+actuals = base_model["actual"]
 models = st.session_state.results
 
-selected_models = st.session_state.get("selected_models", [])
-
-model_names = [m for m in models.keys() if m in selected_models]
+model_names = list(model_results.keys())
 dm_results = []
 
 for i in range(len(model_names)):
     for j in range(i + 1, len(model_names)):
 
-        m1 = model_names[i]
-        m2 = model_names[j]
+        m1, m2 = model_names[i], model_names[j]
 
         pred1 = models[m1]
         pred2 = models[m2]
 
-        # Align lengths just in case
         min_len = min(len(actuals), len(pred1), len(pred2))
 
         dm_stat, p_val = dm_test(
@@ -533,64 +561,155 @@ for i in range(len(model_names)):
             "Significant": "Yes ✅" if p_val < 0.05 else "No ❌"
         })
 
-df_dm = pd.DataFrame(dm_results)
-st.dataframe(df_dm)
+st.dataframe(pd.DataFrame(dm_results))
 
 
-# --- COMPARISON TABLE ---
-st.subheader("📊 Model Metrics Comparison")
-metrics_df = pd.DataFrame({m: {"MAE":res['MAE'],"RMSE":res['RMSE'],"R2":res['R2'],"MAPE":res['MAPE']} for m,res in model_results.items()}).T.reset_index().melt(id_vars='index', var_name='Metric', value_name='Value')
-metrics_df.rename(columns={'index':'Model'}, inplace=True)
-fig2 = px.bar(metrics_df, x='Model', y='Value', color='Metric', barmode='group', text='Value', template="plotly_white")
-st.plotly_chart(fig2, use_container_width=True)
+# =========================
+# ALIGN ALL MODELS TO COMMON DATE RANGE
+# =========================
 
-# --- PLOTS ---
+# gets all available date arrays safely
+all_dates = [res.get("dates") for res in model_results.values() if "dates" in res]
+
+# removes None / empty
+all_dates = [d for d in all_dates if d is not None and len(d) > 0]
+
+if len(all_dates) > 0:
+    common_start = max(d[0] for d in all_dates)
+    common_end = min(d[-1] for d in all_dates)
+
+    # filters each model to same time window
+    for m in model_results:
+        if "dates" in model_results[m]:
+            dates = pd.Index(model_results[m]["dates"])
+
+            mask = (dates >= common_start) & (dates <= common_end)
+
+            model_results[m]["pred"] = np.array(model_results[m]["pred"])[mask]
+            model_results[m]["actual"] = np.array(model_results[m]["actual"])[mask]
+            model_results[m]["dates"] = dates[mask]
+
+
+# =========================
+# DM TEST
+# =========================
+
 st.subheader("📈 Actual vs Predicted Volatility")
 
-# Find the minimum length among all predictions + actuals
-min_len = min(len(actuals), *(len(res['pred']) for res in model_results.values()))
+plot_frames = []
 
-# Slice actuals and all predictions to this length
-aligned_actuals = actuals[-min_len:]
-plot_dict = {m: res['pred'][-min_len:] for m,res in model_results.items()}
-plot_dict['Actual'] = aligned_actuals
+# =========================
+# PREDICTIONS
+# =========================
+for model_name, res in model_results.items():
 
-plot_df = pd.DataFrame(plot_dict)
+    n = min(
+        len(res["pred"]),
+        len(res["actual"]),
+        len(res["dates"])
+    )
 
-# Melt for Plotly
-plot_df = plot_df.reset_index().rename(columns={'index': 'Date'})
+    if n == 0:
+        continue
 
-plot_df = plot_df.melt(
-    id_vars='Date',
-    var_name='Model',
-    value_name='Volatility'
+    pred_df = pd.DataFrame({
+        "Date": res["dates"][:n],
+        "Volatility": res["pred"][:n],
+        "Model": model_name
+    })
+
+    plot_frames.append(pred_df)
+
+
+# =========================
+# ACTUAL SERIES (FIXED)
+# =========================
+first_model = next(iter(model_results.values()))
+
+n_actual = min(
+    len(first_model["actual"]),
+    len(first_model["dates"])
+)
+
+actual_df = pd.DataFrame({
+    "Date": first_model["dates"][:n_actual],
+    "Volatility": first_model["actual"][:n_actual],
+    "Model": "Actual"
+})
+
+plot_frames.append(actual_df)
+
+
+# =========================
+# BEST MODEL SELECTION
+# =========================
+
+if len(model_results) > 0:
+
+    best_model = min(
+        model_results.items(),
+        key=lambda x: x[1]["QLIKE"]  
+    )
+
+    best_model_name = best_model[0]
+    best_qlike = best_model[1]["QLIKE"]
+
+    st.success(f"🏆 Best Model: {best_model_name} (QLIKE: {best_qlike:.6f})")
+
+ranking = sorted(
+    [(m, res["QLIKE"]) for m, res in model_results.items()],
+    key=lambda x: x[1]
+)
+
+ranking_df = pd.DataFrame(ranking, columns=["Model", "QLIKE"])
+
+st.subheader("📊 Model Ranking (Best → Worst)")
+st.dataframe(ranking_df)
+
+
+
+# =========================
+# PLOT
+# =========================
+plot_df = pd.concat(plot_frames)
+
+plot_df = (
+    plot_df
+    .groupby(["Date","Model"], as_index=False)
+    .mean()
 )
 
 fig = px.line(
     plot_df,
-    x='Date',
-    y='Volatility',
-    color='Model',
-    title="Actual vs Predicted Volatility",
-    template="plotly_white"
+    x="Date",
+    y="Volatility",
+    color="Model",
+    template="plotly_white",
+    title=f"Actual vs Predicted Volatility (Best: {best_model_name})"
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
-# --- Download Predictions ---
-date_col = 'Date' if 'Date' in plot_df.columns else plot_df.columns[0]
 
-csv_data = plot_df.pivot(
-    index=date_col,
-    columns='Model',
-    values='Volatility'
-).reset_index().to_csv(index=False)
+# =========================
+# DOWNLOAD
+# =========================
+csv = (
+    plot_df
+    .groupby(["Date","Model"], as_index=False)
+    .mean()
+    .pivot(
+        index="Date",
+        columns="Model",
+        values="Volatility"
+    )
+    .reset_index()
+    .to_csv(index=False)
+)
 
 st.download_button(
     "📥 Download Predictions",
-    csv_data,
-    "nvo_volatility_predictions.csv",
+    csv,
+    "volatility_predictions.csv",
     "text/csv"
 )
-
-

@@ -1,27 +1,27 @@
 import numpy as np
 from scipy import stats
 
+import numpy as np
+from scipy import stats
+
 def dm_test(actual, pred1, pred2, h=1, power=2):
-    """
-    Diebold-Mariano Test
-    actual: true values
-    pred1: predictions model 1
-    pred2: predictions model 2
-    h: forecast horizon (1 for your case)
-    power: 2 for MSE loss
-    """
 
     actual = np.array(actual)
     pred1 = np.array(pred1)
     pred2 = np.array(pred2)
 
-    # Loss differential
-    d = np.abs(actual - pred1)**power - np.abs(actual - pred2)**power
+    # Loss functions (MSE if power=2)
+    loss1 = np.abs(actual - pred1) ** power
+    loss2 = np.abs(actual - pred2) ** power
 
+    d = loss1 - loss2
     mean_d = np.mean(d)
+
+    # HAC-style variance adjustment (simplified for h=1 case)
     var_d = np.var(d, ddof=1)
 
-    DM_stat = mean_d / np.sqrt(var_d / len(d))
+    # DM statistic (h-adjusted)
+    DM_stat = mean_d / np.sqrt((var_d / len(d)) * h)
 
     # p-value (two-sided)
     p_value = 2 * (1 - stats.norm.cdf(abs(DM_stat)))
