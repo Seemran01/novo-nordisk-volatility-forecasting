@@ -300,7 +300,7 @@ if len(model_results) == 0:
 
 
 # =========================
-# STRONG ALIGNMENT (FIX)
+# STRONG ALIGNMENT 
 # =========================
 
 valid_models = model_results
@@ -412,7 +412,7 @@ if "XGBoost" in selected:
     future_results["XGBoost"] = forecast_ml_next_day(xgb, df, feature_cols)
 
 
-# 🔍 DEBUG HERE (ADD THIS)
+# DEBUG
 st.write("DEBUG forecasts:")
 for k, v in future_results.items():
     st.write(k, v)
@@ -484,6 +484,9 @@ styled_df = (
 st.dataframe(styled_df, use_container_width=True)
 
 
+# =========================
+# FEATURE IMPORTANCE
+# =========================
 st.subheader("🧠 Feature Importance (ML Models)")
 
 # --- Ensure flat columns (fix MultiIndex issue) ---
@@ -622,7 +625,7 @@ for model_name, res in model_results.items():
 
 
 # =========================
-# ACTUAL SERIES (FIXED)
+# ACTUAL SERIES 
 # =========================
 first_model = next(iter(model_results.values()))
 
