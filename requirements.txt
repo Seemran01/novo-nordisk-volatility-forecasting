@@ -6,3 +6,5 @@ yfinance
 scikit-learn
 xgboost
 arch
+plotly
+seaborn
