@@ -215,6 +215,8 @@ st.sidebar.markdown(f"**Step:** {step_size}")
 # --- MAIN APP TITLE ---
 st.title("📈 Novo Nordisk (NVO) Volatility Predictor")
 
+st.info("📌 Academic research tool only. Not financial or investment advice.")
+
 st.markdown("""
 This dashboard presents **short-horizon volatility forecasts for Novo Nordisk stock**
 using both **machine learning models** (Random Forest, SVR, XGBoost) and
