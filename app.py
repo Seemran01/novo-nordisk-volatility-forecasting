@@ -606,6 +606,20 @@ plot_frames = []
 # =========================
 for model_name, res in model_results.items():
 
+    st.write(model_name)
+
+    pred = res["pred"]
+    actual = res["actual"]
+
+    st.write("pred len:", len(pred))
+    st.write("actual len:", len(actual))
+
+    # 🔍 ADD THIS DEBUG
+    st.write("actual min/max:", actual.min(), actual.max())
+    st.write("pred min/max:", pred.min(), pred.max())
+
+    st.write("---")
+
     n = min(
         len(res["pred"]),
         len(res["actual"]),
@@ -682,6 +696,8 @@ plot_df = (
     .mean()
 )
 
+plot_df["Volatility"] = plot_df["Volatility"].clip(lower=1e-8)
+
 fig = px.line(
     plot_df,
     x="Date",
@@ -690,7 +706,7 @@ fig = px.line(
     template="plotly_white",
     title=f"Actual vs Predicted Volatility (Best: {best_model_name})"
 )
-
+fig.update_yaxes(type="log")
 st.plotly_chart(fig, use_container_width=True)
 
 

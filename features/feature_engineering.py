@@ -6,28 +6,36 @@ def create_features(df):
     n = len(df)
 
     # -----------------------
-    # CORE VARIABLES
+    # RETURNS
     # -----------------------
     df['Log_Returns'] = np.log(df['Close']).diff()
 
-    df['Realized_Vol'] = df['Log_Returns'].rolling(22).var()
+    # -----------------------
+    # TARGET (NEXT-DAY PROXY)
+    # -----------------------
+    df['Realized_Vol'] = df['Log_Returns']**2
     df['Realized_Vol'] = df['Realized_Vol'].clip(lower=1e-8)
 
     # -----------------------
     # ML FEATURES
     # -----------------------
-    df['MA_5'] = df['Close'].rolling(min(5, n)).mean()
-    df['MA_20'] = df['Close'].rolling(min(20, n)).mean()
-    df['Volatility_10'] = df['Log_Returns'].rolling(min(10, n)).std()
+    df['MA_5'] = df['Close'].rolling(5).mean()
+    df['MA_20'] = df['Close'].rolling(20).mean()
+    df['Volatility_10'] = df['Log_Returns'].rolling(10).std()
     df['Volume_Change'] = df['Volume'].pct_change()
 
     # -----------------------
-    # HAR FEATURES
+    # HAR FEATURES (STRICTLY LAGGED)
     # -----------------------
-    df['RV_1D'] = df['Realized_Vol'].shift(1)
-    df['RV_5D'] = df['Realized_Vol'].rolling(min(5, n)).mean().shift(1)
-    df['RV_22D'] = df['Realized_Vol'].rolling(min(22, n)).mean().shift(1)
+    r2 = df['Log_Returns']**2
 
+    df['RV_1D'] = r2.shift(1)
+    df['RV_5D'] = r2.rolling(5).mean().shift(1)
+    df['RV_22D'] = r2.rolling(22).mean().shift(1)
+
+    # -----------------------
+    # CLEANING
+    # -----------------------
     df.dropna(inplace=True)
 
     return df
