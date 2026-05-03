@@ -6,9 +6,6 @@ def calculate_metrics(actual, pred):
     actual = np.array(actual, dtype=float)
     pred = np.array(pred, dtype=float)
 
-    print("DEBUG actual min/max:", np.min(actual), np.max(actual))
-    print("DEBUG pred min/max:", np.min(pred), np.max(pred))
-
     # =========================
     # REMOVE INVALID VALUES ONCE
     # =========================

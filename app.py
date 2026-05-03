@@ -260,25 +260,15 @@ df = create_features(df)
 
 X, y = prepare_data(df)
 
-feature_cols = X.columns
-
-rf = rf_model().fit(X, y)
-svr = svr_model().fit(X, y)
-xgb = xgb_model().fit(X, y)
-
-har_X = df[['RV_1D', 'RV_5D', 'RV_22D']]
-har_y = df['Realized_Vol']
-
-har_model = LinearRegression()
-har_model.fit(har_X, har_y)
-
-st.write("X shape:", X.shape)
+feature_cols = [
+    'Log_Returns','MA_5','MA_20','Volatility_10',
+    'Volume_Change','RV_1D','RV_5D','RV_22D'
+]
 
 # =========================
 # RUN ALL MODELS
 # =========================
 
-st.write("DEBUG selected_models:", st.session_state.selected_models)
 
 model_results = run_all_models(
     df,
@@ -286,15 +276,6 @@ model_results = run_all_models(
     window_size,
     step_size
 )
-
-st.write("DEBUG model_results keys:", list(model_results.keys()))
-
-for m, res in model_results.items():
-    st.write(m)
-    st.write("pred:", len(res["pred"]))
-    st.write("actual:", len(res["actual"]))
-    st.write("dates:", len(res["dates"]))
-    st.write("---")
 
 if len(model_results) == 0:
     st.warning("No models selected or no results generated.")
@@ -316,7 +297,6 @@ for res in model_results.values():
 common_start = max(d[0] for d in all_dates)
 common_end = min(d[-1] for d in all_dates)
 
-st.write("VALID MODELS:", list(valid_models.keys()))
 
 if len(all_dates) == 0:
     st.error("No valid dates found")
@@ -390,7 +370,20 @@ st.plotly_chart(fig, use_container_width=True)
 future_results = {}
 
 selected = st.session_state.selected_models
-st.write("Selected models:", selected)
+
+# Train on latest available data ONLY for next-day forecast
+# NOTE:
+# Models below are trained on full dataset ONLY to generate next-day forecasts.
+# This is separate from walk-forward validation used for performance evaluation.
+rf = rf_model().fit(X, y)
+svr = svr_model().fit(X, y)
+xgb = xgb_model().fit(X, y)
+
+har_X = df[['RV_1D', 'RV_5D', 'RV_22D']]
+har_y = df['Realized_Vol']
+
+har_model = LinearRegression()
+har_model.fit(har_X, har_y)
 
 if "GARCH(1,1)" in selected:
     future_results["GARCH(1,1)"] = forecast_garch_next(df)
@@ -413,11 +406,6 @@ if "SVR" in selected:
 if "XGBoost" in selected:
     future_results["XGBoost"] = forecast_ml_next_day(xgb, df, feature_cols)
 
-
-# DEBUG
-st.write("DEBUG forecasts:")
-for k, v in future_results.items():
-    st.write(k, v)
 
 # =========================
 # DISPLAY
@@ -531,16 +519,42 @@ if "SVR" in st.session_state.selected_models:
 
 
 # =========================
+# ALIGN ALL MODELS TO COMMON DATE RANGE
+# =========================
+
+# gets all available date arrays safely
+all_dates = [res.get("dates") for res in model_results.values() if "dates" in res]
+
+# removes None / empty
+all_dates = [d for d in all_dates if d is not None and len(d) > 0]
+
+if len(all_dates) > 0:
+    common_start = max(d[0] for d in all_dates)
+    common_end = min(d[-1] for d in all_dates)
+
+    # filters each model to same time window
+    for m in model_results:
+        if "dates" in model_results[m]:
+            dates = pd.Index(model_results[m]["dates"])
+
+            mask = (dates >= common_start) & (dates <= common_end)
+
+            model_results[m]["pred"] = np.array(model_results[m]["pred"])[mask]
+            model_results[m]["actual"] = np.array(model_results[m]["actual"])[mask]
+            model_results[m]["dates"] = dates[mask]
+
+
+# =========================
 # DM TEST
 # =========================
 st.subheader("📉 Diebold–Mariano Test")
 
+model_names = list(model_results.keys())
+dm_results = []
+
 base_model = next(iter(model_results.values()))
 actuals = base_model["actual"]
 models = st.session_state.results
-
-model_names = list(model_results.keys())
-dm_results = []
 
 for i in range(len(model_names)):
     for j in range(i + 1, len(model_names)):
@@ -570,33 +584,7 @@ st.dataframe(pd.DataFrame(dm_results))
 
 
 # =========================
-# ALIGN ALL MODELS TO COMMON DATE RANGE
-# =========================
-
-# gets all available date arrays safely
-all_dates = [res.get("dates") for res in model_results.values() if "dates" in res]
-
-# removes None / empty
-all_dates = [d for d in all_dates if d is not None and len(d) > 0]
-
-if len(all_dates) > 0:
-    common_start = max(d[0] for d in all_dates)
-    common_end = min(d[-1] for d in all_dates)
-
-    # filters each model to same time window
-    for m in model_results:
-        if "dates" in model_results[m]:
-            dates = pd.Index(model_results[m]["dates"])
-
-            mask = (dates >= common_start) & (dates <= common_end)
-
-            model_results[m]["pred"] = np.array(model_results[m]["pred"])[mask]
-            model_results[m]["actual"] = np.array(model_results[m]["actual"])[mask]
-            model_results[m]["dates"] = dates[mask]
-
-
-# =========================
-# DM TEST
+# COMPARISON
 # =========================
 
 st.subheader("📈 Actual vs Predicted Volatility")
@@ -607,20 +595,6 @@ plot_frames = []
 # PREDICTIONS
 # =========================
 for model_name, res in model_results.items():
-
-    st.write(model_name)
-
-    pred = res["pred"]
-    actual = res["actual"]
-
-    st.write("pred len:", len(pred))
-    st.write("actual len:", len(actual))
-
-    # 🔍 ADD THIS DEBUG
-    st.write("actual min/max:", actual.min(), actual.max())
-    st.write("pred min/max:", pred.min(), pred.max())
-
-    st.write("---")
 
     n = min(
         len(res["pred"]),
@@ -698,8 +672,6 @@ plot_df = (
     .mean()
 )
 
-plot_df["Volatility"] = plot_df["Volatility"].clip(lower=1e-8)
-
 fig = px.line(
     plot_df,
     x="Date",
@@ -708,7 +680,9 @@ fig = px.line(
     template="plotly_white",
     title=f"Actual vs Predicted Volatility (Best: {best_model_name})"
 )
-fig.update_yaxes(type="log")
+
+
+
 st.plotly_chart(fig, use_container_width=True)
 
 
