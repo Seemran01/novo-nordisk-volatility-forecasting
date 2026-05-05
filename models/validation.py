@@ -1,3 +1,4 @@
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 
@@ -7,21 +8,13 @@ def walk_forward_validation(
     model_fn,
     initial_window=756,
     step_size=5,
-    forecast_horizon=22
+    forecast_horizon=1
 ):
 
-    preds = []
-    actuals = []
-    dates = []
+    preds, actuals, dates = [], [], []
 
-    start = initial_window
-    n = len(X)
+    for i in range(initial_window, len(X) - forecast_horizon, step_size):
 
-    for i in range(start, n - forecast_horizon, step_size):
-
-        # ------------------------
-        # EXPANDING TRAIN SET
-        # ------------------------
         X_train = X.iloc[:i]
         y_train = y.iloc[:i]
 
@@ -29,15 +22,22 @@ def walk_forward_validation(
         y_test = y.iloc[i:i + forecast_horizon]
 
         # ------------------------
+        # SCALE
+        # ------------------------
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+        # ------------------------
         # TRAIN MODEL
         # ------------------------
         model = model_fn()
-        model.fit(X_train, y_train)
+        model.fit(X_train_scaled, y_train)
 
         # ------------------------
         # PREDICT
         # ------------------------
-        y_pred = model.predict(X_test)
+        y_pred = model.predict(X_test_scaled)
 
         preds.extend(y_pred)
         actuals.extend(y_test.values)
@@ -45,10 +45,9 @@ def walk_forward_validation(
 
     return np.array(preds), np.array(actuals), dates
 
-
-
-def forecast_ml_next_day(model, df, feature_cols):
+def forecast_ml_next_day(model, scaler, df, feature_cols):
 
     last_row = df[feature_cols].iloc[-1].values.reshape(1, -1)
+    last_row_scaled = scaler.transform(last_row)
 
-    return model.predict(last_row)[0]
+    return model.predict(last_row_scaled)[0]

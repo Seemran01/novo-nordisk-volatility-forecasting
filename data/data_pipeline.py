@@ -1,7 +1,7 @@
-from sklearn.preprocessing import StandardScaler
 import pandas as pd
 
 def prepare_data(df):
+
     feature_cols = [
         'Log_Returns',
         'MA_5',
@@ -13,14 +13,7 @@ def prepare_data(df):
         'RV_22D'
     ]
 
-    X_raw = df[feature_cols].ffill().bfill()
-
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_raw)
-
-    # Converts back to DataFrame
-    X = pd.DataFrame(X_scaled, columns=feature_cols, index=df.index)
-
+    X = df[feature_cols].ffill().bfill()
     y = df["Realized_Vol"]
 
     return X, y

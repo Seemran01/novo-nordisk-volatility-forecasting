@@ -19,10 +19,10 @@ def create_features(df):
     # -----------------------
     # ML FEATURES
     # -----------------------
-    df['MA_5'] = df['Close'].rolling(5).mean()
-    df['MA_20'] = df['Close'].rolling(20).mean()
-    df['Volatility_10'] = df['Log_Returns'].rolling(10).std()
-    df['Volume_Change'] = df['Volume'].pct_change()
+    df['MA_5'] = df['Close'].rolling(5).mean().shift(1)
+    df['MA_20'] = df['Close'].rolling(20).mean().shift(1)
+    df['Volatility_10'] = df['Log_Returns'].rolling(10).std().shift(1)
+    df['Volume_Change'] = df['Volume'].pct_change().shift(1)
 
     # -----------------------
     # HAR FEATURES (STRICTLY LAGGED)
