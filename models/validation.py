@@ -45,9 +45,6 @@ def walk_forward_validation(
 
     return np.array(preds), np.array(actuals), dates
 
-def forecast_ml_next_day(model, scaler, df, feature_cols):
-
+def forecast_ml_next_day(model, df, feature_cols):
     last_row = df[feature_cols].iloc[-1].values.reshape(1, -1)
-    last_row_scaled = scaler.transform(last_row)
-
-    return model.predict(last_row_scaled)[0]
+    return model.predict(last_row)[0]
