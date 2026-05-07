@@ -40,7 +40,7 @@ qlike_scorer = make_scorer(
 
 
 # =========================================================
-# WALK-FORWARD VALIDATION (CLEAN VERSION)
+# WALK-FORWARD VALIDATION 
 # =========================================================
 def walk_forward_validation(
     X,
@@ -68,7 +68,7 @@ def walk_forward_validation(
         y_test = y.iloc[i:i + forecast_horizon]
 
         # ========================
-        # PIPELINE (ACTUALLY USED)
+        # PIPELINE
         # ========================
         pipe = Pipeline([
             ("scaler", StandardScaler()),
