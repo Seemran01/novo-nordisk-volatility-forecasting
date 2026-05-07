@@ -13,6 +13,22 @@ from models.econometric import (
     walk_forward_naive
 )
 
+rf_params = {
+    "n_estimators": [100, 200],
+    "max_depth": [3, 5, None],
+    "min_samples_split": [2, 5]
+}
+
+svr_params = {
+    "svr__C": [0.1, 1, 10],
+    "svr__gamma": ["scale", "auto"]
+}
+
+xgb_params = {
+    "n_estimators": [100, 200],
+    "max_depth": [3, 5],
+    "learning_rate": [0.01, 0.1]
+}
 
 def run_all_models(df, selected_models, window_size, step_size):
 
@@ -29,30 +45,31 @@ def run_all_models(df, selected_models, window_size, step_size):
     # ML MODELS 
     # =========================
     ml_models = {
-        "Random Forest": rf_model,
-        "SVR": svr_model,
-        "XGBoost": xgb_model
+      "Random Forest": (rf_model, rf_params),
+      "SVR": (svr_model, svr_params),
+      "XGBoost": (xgb_model, xgb_params)
     }
 
-    for name, model_fn in ml_models.items():
-        if name in selected_models:
+    for name, (model_fn, param_grid) in ml_models.items():
+      if name in selected_models:
 
-            pred, actual, dates = walk_forward_validation(
-                X,
-                y,
-                model_fn,
-                initial_window,
-                step_size,
-                forecast_horizon=22
-            )
+        pred, actual, dates = walk_forward_validation(
+             X=X,
+             y=y,
+             model_fn=model_fn,
+             param_grid=param_grid,
+             initial_window=initial_window,
+             step_size=step_size,
+             forecast_horizon=1
+        )
 
-            if len(pred) > 0:
-                model_results[name] = {
-                    "pred": np.array(pred),
-                    "actual": np.array(actual),
-                    "dates": pd.to_datetime(dates),
-                    **calculate_metrics(actual, pred)
-                }
+        if len(pred) > 0:
+            model_results[name] = {
+                "pred": np.array(pred),
+                "actual": np.array(actual),
+                "dates": pd.to_datetime(dates),
+                **calculate_metrics(actual, pred)
+            }
 
     # =========================
     # GARCH
@@ -60,7 +77,7 @@ def run_all_models(df, selected_models, window_size, step_size):
     if "GARCH(1,1)" in selected_models:
 
         pred, actual, dates = walk_forward_garch(
-            df, initial_window, step_size, forecast_horizon=22
+            df, initial_window, step_size, forecast_horizon=1
         )
 
         if len(pred) > 0:
@@ -77,7 +94,7 @@ def run_all_models(df, selected_models, window_size, step_size):
     if "HAR-RV" in selected_models:
 
         pred, actual, dates = walk_forward_har(
-            df, initial_window, step_size, forecast_horizon=22
+            df, initial_window, step_size, forecast_horizon=1
         )
 
         if len(pred) > 0:
@@ -97,7 +114,7 @@ def run_all_models(df, selected_models, window_size, step_size):
             df["Log_Returns"],
             initial_window,
             step_size,
-            forecast_horizon=22
+            forecast_horizon=1
         )
 
         if len(pred) > 0:
@@ -117,7 +134,7 @@ def run_all_models(df, selected_models, window_size, step_size):
             y,
             initial_window,
             step_size,
-            forecast_horizon=22
+            forecast_horizon=1
         )
 
         if len(pred) > 0:

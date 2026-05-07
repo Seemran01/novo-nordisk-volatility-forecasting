@@ -1,29 +1,25 @@
-# 📊 Volatility Forecasting System (Novo Nordisk)
+# # Volatility Forecasting System (Novo Nordisk)
 
-This project implements a **financial volatility forecasting framework** combining **econometric models** and **machine learning models** to predict and evaluate stock market volatility.
+This project implements a financial volatility forecasting framework combining econometric and machine learning models to predict and evaluate stock market volatility.
 
-The system is designed for **short-horizon forecasting** using a realistic **walk-forward validation framework**, ensuring no look-ahead bias.
+The system is designed for short-horizon forecasting using a walk-forward validation framework to ensure realistic out-of-sample evaluation and prevent look-ahead bias.
 
----
+## Features
 
-## 🚀 Features
+- Econometric models: GARCH(1,1), HAR-RV  
+- Machine learning models: Random Forest, Support Vector Regression (SVR), XGBoost  
+- Benchmark models: Naive Persistence, EWMA  
+- Walk-forward validation for time-series evaluation  
+- Interactive Streamlit dashboard for model comparison  
+- Volatility-specific evaluation metrics (QLIKE, MAE, RMSE)  
+- Visual comparison of actual vs predicted volatility  
 
-- 📉 Econometric models: GARCH(1,1), HAR-RV  
-- 🤖 Machine Learning models: Random Forest, SVR, XGBoost  
-- 📊 Benchmark models: Naive Persistence, EWMA  
-- 🔁 Walk-forward validation for realistic time-series evaluation  
-- 📈 Interactive Streamlit dashboard for live model comparison  
-- 📊 Forecast evaluation using volatility-specific metrics (QLIKE, MAE, RMSE)  
-- 📉 Visual comparison of actual vs predicted volatility  
-
----
-
-## 🧠 Models Used
+## Models Used
 
 ### Econometric Models
-- GARCH(1,1)
-- HAR-RV (Heterogeneous Autoregressive model)
-- EWMA (Exponentially Weighted Moving Average)
+- GARCH(1,1)  
+- HAR-RV (Heterogeneous Autoregressive model)  
+- EWMA (Exponentially Weighted Moving Average)  
 
 ### Machine Learning Models
 - Random Forest Regression  
@@ -31,41 +27,57 @@ The system is designed for **short-horizon forecasting** using a realistic **wal
 - XGBoost Regression  
 
 ### Baseline Models
-- Naive Persistence (random walk benchmark)
+- Naive Persistence (random walk benchmark)  
+- EWMA Volatility  
 
----
-
-## 📊 Evaluation Metrics
+## Evaluation Metrics
 
 - Mean Absolute Error (MAE)  
 - Root Mean Squared Error (RMSE)  
-- QLIKE (preferred volatility loss function for variance forecasting)
+- QLIKE (quasi-likelihood loss function for volatility forecasting)  
 
----
+## Methodology
 
-## 🛠️ Methodology
+- Data: Daily stock prices of Novo Nordisk (NVO)  
+- Target variable: Realized volatility computed from squared log returns  
+- Validation: Expanding window walk-forward validation  
+- Forecast horizon: One-step-ahead daily volatility prediction  
+- Objective: Compare machine learning models against econometric benchmarks under identical forecasting conditions  
 
-- **Data**: Daily stock prices of Novo Nordisk (NVO)  
-- **Target variable**: Realized volatility (variance of log returns)  
-- **Validation**: Walk-forward (rolling/expanding window forecasting)  
-- **Forecast horizon**: Short-term multi-step ahead predictions  
-- **Objective**: Compare machine learning models with econometric benchmarks under identical forecasting conditions  
+## Tech Stack
 
----
-
-## 🧪 Tech Stack
-
-- Python  
+- Python 3.10+  
 - Pandas, NumPy  
 - Scikit-learn  
-- ARCH library (GARCH model)  
+- ARCH (for GARCH models)  
 - Streamlit  
 - Plotly  
 
----
+## Installation and Setup
 
-## ▶️ Run the Project
+Clone the repository:
+git clone <repository-url>
+cd <project-folder>
 
-```bash
+Create a virtual environment:
+python -m venv venv
+
+Activate the virtual environment:
+
+Windows:
+venv\Scripts\activate
+
+macOS / Linux:
+source venv/bin/activate
+
+Install dependencies:
 pip install -r requirements.txt
+
+Run the application:
 streamlit run app.py
+
+## Notes
+
+- Ensure all dependencies are installed inside the virtual environment  
+- Walk-forward validation increases computation time  
+- All models are evaluated under identical forecasting conditions for fair comparison  
