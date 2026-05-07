@@ -7,7 +7,7 @@ from sklearn.linear_model import LinearRegression
 # =========================
 # GARCH WALK-FORWARD
 # =========================
-def walk_forward_garch(df, initial_window, step_size, forecast_horizon=22):
+def walk_forward_garch(df, initial_window, step_size, forecast_horizon=1):
 
     returns = df["Log_Returns"].dropna()
 
@@ -36,7 +36,7 @@ def walk_forward_garch(df, initial_window, step_size, forecast_horizon=22):
 # =========================
 # HAR WALK-FORWARD
 # =========================
-def walk_forward_har(df, initial_window, step_size, forecast_horizon=22):
+def walk_forward_har(df, initial_window, step_size, forecast_horizon=1):
 
     X = df[['RV_1D', 'RV_5D', 'RV_22D']]
     y = df['Realized_Vol']  
@@ -66,7 +66,7 @@ def walk_forward_har(df, initial_window, step_size, forecast_horizon=22):
 # =========================
 # NAIVE WALK-FORWARD
 # =========================
-def walk_forward_naive(series, initial_window, step_size, forecast_horizon=22):
+def walk_forward_naive(series, initial_window, step_size, forecast_horizon=1):
 
     preds, actuals, dates = [], [], []
 
@@ -87,7 +87,7 @@ def walk_forward_naive(series, initial_window, step_size, forecast_horizon=22):
 # =========================
 # EWMA WALK-FORWARD
 # =========================
-def walk_forward_ewma(returns, initial_window, step_size, forecast_horizon=22, lam=0.94):
+def walk_forward_ewma(returns, initial_window, step_size, forecast_horizon=1, lam=0.94):
 
     preds, actuals, dates = [], [], []
 

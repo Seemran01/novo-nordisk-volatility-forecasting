@@ -281,7 +281,6 @@ if len(model_results) == 0:
     st.warning("No models selected or no results generated.")
     st.stop()
 
-
 # =========================
 # STRONG ALIGNMENT 
 # =========================

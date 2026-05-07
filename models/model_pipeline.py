@@ -14,20 +14,20 @@ from models.econometric import (
 )
 
 rf_params = {
-    "n_estimators": [100, 200],
-    "max_depth": [3, 5, None],
-    "min_samples_split": [2, 5]
+    "model__n_estimators": [100, 200],
+    "model__max_depth": [3, 5, 10],
+    "model__min_samples_leaf": [1, 3, 5]
 }
 
 svr_params = {
-    "svr__C": [0.1, 1, 10],
-    "svr__gamma": ["scale", "auto"]
+    "model__C": [0.1, 1, 10],
+    "model__gamma": ["scale", "auto"]
 }
 
 xgb_params = {
-    "n_estimators": [100, 200],
-    "max_depth": [3, 5],
-    "learning_rate": [0.01, 0.1]
+    "model__n_estimators": [100, 200],
+    "model__max_depth": [3, 5],
+    "model__learning_rate": [0.01, 0.05, 0.1]
 }
 
 def run_all_models(df, selected_models, window_size, step_size):
